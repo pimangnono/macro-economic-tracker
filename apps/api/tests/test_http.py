@@ -2,11 +2,14 @@ from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 
+from app.api.access import AuthContext, require_auth_context
 from app.api.routes import ingestion as ingestion_routes
+from app.api.routes import notes as notes_routes
 from app.api.routes import notifications as notifications_routes
 from app.api.routes import tracks as tracks_routes
 from app.db.session import get_session
 from app.main import app
+from app.schemas.auth import CurrentUser, WorkspaceMembership
 from app.schemas.dashboard import RecentNotificationItem, SourceHealthItem
 from app.schemas.ingestion import IngestionPullResponse
 from app.schemas.tracks import BootstrapOption, BootstrapResponse, TrackDetail, TrackMetrics
@@ -16,6 +19,32 @@ client = TestClient(app)
 
 async def override_session():
     yield object()
+
+
+def build_auth_context(role: str = "owner") -> AuthContext:
+    return AuthContext(
+        user=CurrentUser(
+            id="22222222-2222-2222-2222-222222222222",
+            email="analyst@macrotracker.local",
+            displayName="Macro Analyst",
+            timezone="UTC",
+            isActive=True,
+            defaultWorkspaceId="11111111-1111-1111-1111-111111111111",
+            workspaces=[
+                WorkspaceMembership(
+                    id="11111111-1111-1111-1111-111111111111",
+                    name="Macro Desk",
+                    slug="macro-desk",
+                    role=role,
+                )
+            ],
+        ),
+        session_token_hash="test-token-hash",
+    )
+
+
+async def override_auth_owner() -> AuthContext:
+    return build_auth_context("owner")
 
 
 def test_root_exposes_service_metadata() -> None:
@@ -37,7 +66,7 @@ def test_live_health_endpoint_is_available() -> None:
 
 
 def test_track_bootstrap_endpoint_returns_options(monkeypatch) -> None:
-    async def fake_bootstrap(_session):
+    async def fake_bootstrap(_session, _user_id):
         return BootstrapResponse(
             workspaces=[BootstrapOption(id="ws-1", label="Macro Desk", value="macro-desk")],
             modes=[BootstrapOption(id="scheduled_release", label="Scheduled Release", value="scheduled_release")],
@@ -45,6 +74,7 @@ def test_track_bootstrap_endpoint_returns_options(monkeypatch) -> None:
         )
 
     app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[require_auth_context] = override_auth_owner
     monkeypatch.setattr(tracks_routes, "fetch_track_bootstrap", fake_bootstrap)
 
     response = client.get("/api/v1/tracks/bootstrap")
@@ -76,6 +106,7 @@ def test_create_track_endpoint_returns_created_track(monkeypatch) -> None:
         )
 
     app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[require_auth_context] = override_auth_owner
     monkeypatch.setattr(tracks_routes, "create_track", fake_create_track)
 
     response = client.post(
@@ -99,8 +130,11 @@ def test_create_track_endpoint_returns_created_track(monkeypatch) -> None:
 
 
 def test_ingestion_sources_endpoint_returns_public_feeds() -> None:
+    app.dependency_overrides[require_auth_context] = override_auth_owner
+
     response = client.get("/api/v1/ingestion/sources")
 
+    app.dependency_overrides.clear()
     assert response.status_code == 200
     payload = response.json()
     assert any(item["sourceKey"] == "fed_press" for item in payload["items"])
@@ -133,6 +167,7 @@ def test_ingestion_status_endpoint_returns_health_items(monkeypatch) -> None:
         ]
 
     app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[require_auth_context] = override_auth_owner
     monkeypatch.setattr(ingestion_routes, "build_source_health_items", fake_build_source_health_items)
 
     response = client.get("/api/v1/ingestion/status")
@@ -163,6 +198,7 @@ def test_ingestion_pull_endpoint_returns_run_summary(monkeypatch) -> None:
         )
 
     app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[require_auth_context] = override_auth_owner
     monkeypatch.setattr(ingestion_routes, "pull_source", fake_pull_source)
 
     response = client.post("/api/v1/ingestion/pull/fed_press?limit=5")
@@ -175,9 +211,12 @@ def test_ingestion_pull_endpoint_returns_run_summary(monkeypatch) -> None:
 
 
 def test_recent_notifications_endpoint_returns_items(monkeypatch) -> None:
-    async def fake_fetch_recent_notifications(_session, workspace_id: str | None, limit: int):
-        assert workspace_id is None
+    async def fake_fetch_recent_notifications(
+        _session, workspace_id: str | None, limit: int, user_id: str | None = None
+    ):
+        assert workspace_id == "11111111-1111-1111-1111-111111111111"
         assert limit == 4
+        assert user_id == "22222222-2222-2222-2222-222222222222"
         return [
             RecentNotificationItem(
                 id="cccccccc-cccc-cccc-cccc-ccccccccccc1",
@@ -199,6 +238,7 @@ def test_recent_notifications_endpoint_returns_items(monkeypatch) -> None:
         ]
 
     app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[require_auth_context] = override_auth_owner
     monkeypatch.setattr(
         notifications_routes,
         "fetch_recent_notifications",
@@ -212,3 +252,63 @@ def test_recent_notifications_endpoint_returns_items(monkeypatch) -> None:
     payload = response.json()
     assert payload["items"][0]["channel"] == "in_app"
     assert payload["items"][0]["trackName"] == "US Inflation"
+
+
+def test_auth_me_endpoint_returns_current_user() -> None:
+    app.dependency_overrides[require_auth_context] = override_auth_owner
+
+    response = client.get("/api/v1/auth/me")
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["email"] == "analyst@macrotracker.local"
+    assert payload["workspaces"][0]["role"] == "owner"
+
+
+def test_list_notes_rejects_multiple_target_filters() -> None:
+    app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[require_auth_context] = override_auth_owner
+
+    response = client.get(
+        "/api/v1/notes?trackId=66666666-6666-6666-6666-666666666661&storyId=77777777-7777-7777-7777-777777777771"
+    )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Provide only one note target filter at a time"
+
+
+def test_create_note_rejects_scope_target_mismatch() -> None:
+    app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[require_auth_context] = override_auth_owner
+
+    response = client.post(
+        "/api/v1/notes",
+        json={
+            "scope": "track",
+            "storyId": "77777777-7777-7777-7777-777777777771",
+            "bodyMd": "Mismatch should fail validation.",
+        },
+    )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 422
+
+
+def test_list_notes_defaults_to_users_workspace(monkeypatch) -> None:
+    async def fake_fetch_notes(_session, **kwargs):
+        assert kwargs["workspace_id"] == "11111111-1111-1111-1111-111111111111"
+        assert kwargs["track_id"] is None
+        return []
+
+    app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[require_auth_context] = override_auth_owner
+    monkeypatch.setattr(notes_routes, "fetch_notes", fake_fetch_notes)
+
+    response = client.get("/api/v1/notes")
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["items"] == []

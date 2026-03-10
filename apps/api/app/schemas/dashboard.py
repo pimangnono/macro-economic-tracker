@@ -50,3 +50,7 @@ class RecentNotificationItem(BaseAPIModel):
 
 class RecentNotificationsResponse(MetadataEnvelope):
     items: list[RecentNotificationItem]
+
+
+class NotificationActionResponse(BaseAPIModel):
+    status: str = "ok"

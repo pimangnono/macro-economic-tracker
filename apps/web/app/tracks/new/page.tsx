@@ -1,10 +1,15 @@
 import { EmptyState } from "@/components/empty-state";
 import { SummaryFrame } from "@/components/summary-frame";
-import { TrackCreateForm } from "@/components/track-create-form";
+import { TrackWizard } from "@/components/track-wizard";
 import { getTrackBootstrap } from "@/lib/api";
+import { getRequiredSession } from "@/lib/auth";
 
 export default async function NewTrackPage() {
-  const bootstrap = await getTrackBootstrap();
+  const session = await getRequiredSession();
+  const bootstrap = await getTrackBootstrap(
+    session.accessToken,
+    session.backendUser?.defaultWorkspaceId ?? undefined,
+  );
 
   if (!bootstrap || bootstrap.workspaces.length === 0) {
     return (
@@ -20,23 +25,26 @@ export default async function NewTrackPage() {
       <section className="detail-hero">
         <div>
           <p className="eyebrow">Tracks / New</p>
-          <h2>Create a monitoring object, not a saved search</h2>
+          <h2>Create a mode-aware monitoring object</h2>
           <p>
-            This writes directly to the FastAPI backend and creates a real `app.tracks`
-            record in Postgres.
+            The creation flow now captures alert sensitivity, evidence strictness, and watchlist
+            context instead of acting like a bare saved-search form.
           </p>
         </div>
       </section>
 
       <SummaryFrame
         summary={{
-          whatChanged: "Track creation is now wired to the production API contract.",
-          whyItMatters: "This is where the product starts moving from read-only to operable.",
-          whatToWatch: "Next step is routing source documents into stories and episodes.",
+          whatChanged: "Track creation now acts like a beta workflow wizard.",
+          whyItMatters: "It captures the operating assumptions the downstream inbox and alerts need.",
+          whatToWatch: "Use the description and watchlist fields to make the first episode matching more precise.",
         }}
       />
 
-      <TrackCreateForm bootstrap={bootstrap} />
+      <TrackWizard
+        bootstrap={bootstrap}
+        defaultWorkspaceId={session.backendUser?.defaultWorkspaceId ?? undefined}
+      />
     </div>
   );
 }

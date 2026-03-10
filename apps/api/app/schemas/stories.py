@@ -39,3 +39,17 @@ class StoryDetail(BaseAPIModel):
 
 class StoryDetailResponse(MetadataEnvelope):
     story: StoryDetail
+
+
+class ContradictionItem(BaseAPIModel):
+    sentence_id: str = Field(alias="sentenceId")
+    sentence_text: str = Field(alias="sentenceText")
+    verdict: str
+    evidence_span_id: str = Field(alias="evidenceSpanId")
+    quote_text: str = Field(alias="quoteText")
+    source_name: str | None = Field(default=None, alias="sourceName")
+    support_status: str = Field(alias="supportStatus")
+
+
+class StoryContradictionsResponse(MetadataEnvelope):
+    items: list[ContradictionItem]

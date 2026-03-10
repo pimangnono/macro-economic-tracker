@@ -99,9 +99,9 @@ async def fetch_live_board(
     return list(grouped.values())
 
 
-async def fetch_track_bootstrap(session: AsyncSession) -> BootstrapResponse:
-    workspaces_result = await session.execute(
-        text(
+async def fetch_track_bootstrap(session: AsyncSession, user_id: str | None = None) -> BootstrapResponse:
+    if user_id is None:
+        workspaces_query = text(
             """
             SELECT id, name, slug
             FROM app.workspaces
@@ -109,7 +109,19 @@ async def fetch_track_bootstrap(session: AsyncSession) -> BootstrapResponse:
             LIMIT 20
             """
         )
-    )
+        workspaces_result = await session.execute(workspaces_query)
+    else:
+        workspaces_query = text(
+            """
+            SELECT w.id, w.name, w.slug
+            FROM app.workspace_members wm
+            JOIN app.workspaces w ON w.id = wm.workspace_id
+            WHERE wm.user_id = CAST(:user_id AS uuid)
+            ORDER BY w.created_at ASC
+            LIMIT 20
+            """
+        )
+        workspaces_result = await session.execute(workspaces_query, {"user_id": user_id})
     workspaces = [
         BootstrapOption(
             id=_iso_uuid(row["id"]),
@@ -475,6 +487,7 @@ async def fetch_recent_notifications(
     session: AsyncSession,
     workspace_id: str | None,
     limit: int,
+    user_id: str | None = None,
 ) -> list[RecentNotificationItem]:
     query = text(
         """
@@ -499,11 +512,15 @@ async def fetch_recent_notifications(
         LEFT JOIN app.stories s ON s.id = n.story_id
         LEFT JOIN app.episodes e ON e.id = n.episode_id
         WHERE (CAST(:workspace_id AS uuid) IS NULL OR n.workspace_id = CAST(:workspace_id AS uuid))
+          AND (CAST(:user_id AS uuid) IS NULL OR n.user_id = CAST(:user_id AS uuid) OR n.user_id IS NULL)
         ORDER BY n.created_at DESC
         LIMIT :limit
         """
     )
-    result = await session.execute(query, {"workspace_id": workspace_id, "limit": limit})
+    result = await session.execute(
+        query,
+        {"workspace_id": workspace_id, "limit": limit, "user_id": user_id},
+    )
     return [
         RecentNotificationItem(
             id=_iso_uuid(row["id"]),

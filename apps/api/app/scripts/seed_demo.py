@@ -6,17 +6,21 @@ from datetime import datetime, timezone
 import asyncpg
 
 from app.core.config import get_settings
+from app.core.security import hash_password
 
 DEFAULT_WORKSPACE_ID = "11111111-1111-1111-1111-111111111111"
 DEFAULT_USER_ID = "22222222-2222-2222-2222-222222222222"
+DEFAULT_USER_PASSWORD = "macro-demo-pass"
 
-SEED_SQL = """
-INSERT INTO app.users (id, email, display_name, timezone)
+SEED_SQL_TEMPLATE = """
+INSERT INTO app.users (id, email, display_name, timezone, password_hash, email_verified_at)
 VALUES
-  ('22222222-2222-2222-2222-222222222222', 'analyst@macrotracker.local', 'Macro Analyst', 'Asia/Singapore')
+  ('22222222-2222-2222-2222-222222222222', 'analyst@macrotracker.local', 'Macro Analyst', 'Asia/Singapore', '__PASSWORD_HASH__', now())
 ON CONFLICT (email) DO UPDATE
 SET display_name = EXCLUDED.display_name,
-    timezone = EXCLUDED.timezone;
+    timezone = EXCLUDED.timezone,
+    password_hash = EXCLUDED.password_hash,
+    email_verified_at = COALESCE(app.users.email_verified_at, EXCLUDED.email_verified_at);
 
 INSERT INTO app.workspaces (id, name, slug, created_by)
 VALUES
@@ -385,12 +389,16 @@ async def run() -> None:
     settings = get_settings()
     connection = await asyncpg.connect(_normalize_asyncpg_dsn(settings.database_url))
     try:
-        await connection.execute(SEED_SQL)
+        await connection.execute(
+            SEED_SQL_TEMPLATE.replace("__PASSWORD_HASH__", hash_password(DEFAULT_USER_PASSWORD))
+        )
         print(
             "Seeded demo workspace",
             DEFAULT_WORKSPACE_ID,
             "for user",
             DEFAULT_USER_ID,
+            "password",
+            DEFAULT_USER_PASSWORD,
             "at",
             datetime.now(timezone.utc).isoformat(),
         )

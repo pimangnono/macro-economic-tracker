@@ -20,7 +20,8 @@ Production-oriented scaffold for the Track-first macro intelligence platform des
 2. Start infrastructure with `docker compose up --build`.
 3. Seed demo data with `docker compose run --rm api python -m app.scripts.seed_demo`.
 4. Open `http://localhost:3000`.
-5. The API will be available at `http://localhost:8000`.
+5. Sign in with `analyst@macrotracker.local` / `macro-demo-pass`.
+6. The API will be available at `http://localhost:8000`.
 
 ## Local Development
 
@@ -55,13 +56,20 @@ Public source ingestion is now wired for these no-key sources:
 List sources:
 
 ```bash
-curl http://localhost:8000/api/v1/ingestion/sources
+TOKEN=$(curl -s http://localhost:8000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"analyst@macrotracker.local","password":"macro-demo-pass"}' | jq -r .accessToken)
+
+curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8000/api/v1/ingestion/sources
 ```
 
 Pull one source:
 
 ```bash
-curl -X POST "http://localhost:8000/api/v1/ingestion/pull/fed_press?limit=10"
+curl -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8000/api/v1/ingestion/pull/fed_press?limit=10"
 ```
 
 This will:
@@ -86,33 +94,51 @@ docker compose up worker
 Operational endpoints:
 
 ```bash
-curl http://localhost:8000/api/v1/ingestion/status
-curl http://localhost:8000/api/v1/notifications/recent
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/v1/ingestion/status
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/v1/notifications/recent
 ```
 
 ## API Keys
 
 No API key is required for the public feeds above.
 
-You will need keys later for:
+The production-beta scaffold now reads these keys when available:
 
 - `OPENAI_API_KEY`: LLM summarization / clustering / drafting
 - `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET`: object storage for exports or raw archives
+- `SENTRY_DSN`: backend exception capture
+
+## Auth and Workspaces
+
+- The web app is now the public entrypoint, with Auth.js-backed sessions on the Next.js side.
+- The API expects bearer-token auth for every non-health route.
+- `POST /api/v1/auth/login` returns the bearer token used by direct API clients.
+- Invite-only workspace onboarding is available through `POST /api/v1/auth/accept-invite`.
+- Workspace membership and role changes are available under `/api/v1/workspaces/{workspaceId}/members`.
+
+## Migrations
+
+- `db_schema.sql` should be treated as the frozen base schema.
+- New schema changes belong in additive SQL files under `migrations/`.
+- The current production-beta auth/session migration is `migrations/20260310_production_beta.sql`.
 
 ## Current Scope
 
-The initial implementation is production-oriented infrastructure and MVP surfaces:
+The current implementation is a production-beta scaffold with authenticated surfaces:
 
-- Home / Inbox live board
-- Track detail shell
-- Track creation flow
-- Story detail shell
+- Authenticated Home / Inbox
+- Track list, creation wizard, and mode-aware track detail canvas
+- Story detail with contradiction and evidence views
+- Workspace member management and invite flow
+- Track notes, snapshots, and alert-center actions
 - Postgres-backed read APIs
 - Postgres-backed write APIs for tracks, notes, and alert policy
 - Public-feed ingestion for Fed / ECB / BLS
+- Snapshot artifact generation with inline fallback and optional S3 upload
+- Session-backed API auth and workspace RBAC
 - Scheduled ingestion worker
 - Source health and recent in-app notifications on the home screen
 - SSE endpoint over `app.event_outbox`
 - Migration runner and deterministic demo seed
 
-Auth and key-backed external enrichments are still left unconfigured until production credentials are available.
+OpenAI-backed enrichment, S3-backed artifact storage, and Sentry capture are wired as optional integrations and activate when credentials are present.

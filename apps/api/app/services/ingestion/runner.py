@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.schemas.ingestion import IngestionPullResponse
+from app.services.enrichment import record_story_enrichment
 from app.services.ingestion.sources import SourceDefinition, get_source_definition
 
 STOPWORDS = {
@@ -1615,6 +1616,13 @@ async def _process_item(
                 item=item,
                 source=source,
                 is_new_story=is_new_story,
+            )
+            await record_story_enrichment(
+                session,
+                story_id=story_id,
+                track_ids=[match.track_id for match in workspace_matches],
+                episode_id=episode_id,
+                source_key=source.source_key,
             )
 
     inserted_count = int(raw_inserted or document_inserted)
