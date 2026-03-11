@@ -1,7 +1,7 @@
 PYTHON ?= python3
 PYTHONPATH ?= apps/api
 
-.PHONY: migrate seed test-api lint-api ingestion-worker
+.PHONY: migrate seed test-api lint-api ingestion-worker pipeline-worker
 
 migrate:
 	PYTHONPATH=$(PYTHONPATH) $(PYTHON) -m app.scripts.migrate
@@ -17,3 +17,6 @@ lint-api:
 
 ingestion-worker:
 	PYTHONPATH=$(PYTHONPATH) $(PYTHON) -m app.scripts.run_source_scheduler
+
+pipeline-worker:
+	PYTHONPATH=$(PYTHONPATH) $(PYTHON) -m app.scripts.run_pipeline_worker

@@ -21,6 +21,7 @@ from app.core.config import get_settings
 from app.schemas.ingestion import IngestionPullResponse
 from app.services.enrichment import record_story_enrichment
 from app.services.ingestion.sources import SourceDefinition, get_source_definition
+from app.services.pipeline.queue import enqueue_job as _enqueue_pipeline_job
 
 STOPWORDS = {
     "about",
@@ -1537,6 +1538,24 @@ async def _process_item(
         raw_document_id=raw_document_id,
         item=item,
     )
+
+    # Enqueue LLM pipeline job for event extraction (if configured)
+    settings = get_settings()
+    if settings.pipeline_enabled and settings.openai_api_key:
+        await _enqueue_pipeline_job(
+            session,
+            job_type="event_extraction",
+            source_object_type="document",
+            source_object_id=document_id,
+            input_json={
+                "document_id": document_id,
+                "title": item.title,
+                "body_text": item.body_text or item.title,
+                "document_type": source.document_type,
+                "source_key": source.source_key,
+            },
+            priority=100,
+        )
 
     track_matches = [
         match

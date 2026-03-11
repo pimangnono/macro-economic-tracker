@@ -55,7 +55,12 @@ export default async function StoryDetailPage({
                 <li key={item.id}>
                   <blockquote>{item.quoteText}</blockquote>
                   <p>
-                    {item.sourceName ?? "Unknown source"} · {item.supportStatus ?? "unknown"}
+                    {item.sourceName ?? "Unknown source"} ·{" "}
+                    <span
+                      className={`verdict-badge verdict-${item.supportStatus ?? "unknown"}`}
+                    >
+                      {item.supportStatus ?? "unknown"}
+                    </span>
                   </p>
                 </li>
               ))}

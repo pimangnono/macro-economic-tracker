@@ -85,6 +85,28 @@ services:
       redis:
         condition: service_healthy
 
+  pipeline-worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://macro_user:macro_password@postgres:5432/macro_tracker}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://openrouter.ai/api/v1}
+      OPENAI_DEFAULT_MODEL: ${OPENAI_DEFAULT_MODEL:-openai/gpt-4o-mini}
+      OPENAI_COMPLEX_MODEL: ${OPENAI_COMPLEX_MODEL:-openai/gpt-5-mini}
+      PIPELINE_ENABLED: ${PIPELINE_ENABLED:-true}
+    command: ["python", "-m", "app.scripts.run_pipeline_worker"]
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
   web:
     build:
       context: .
